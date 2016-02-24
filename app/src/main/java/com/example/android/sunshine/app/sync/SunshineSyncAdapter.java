@@ -28,14 +28,22 @@ import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.TaskStackBuilder;
 import android.text.format.Time;
 import android.util.Log;
+import android.widget.RemoteViews;
 
 import com.bumptech.glide.Glide;
 import com.example.android.sunshine.app.BuildConfig;
 import com.example.android.sunshine.app.MainActivity;
 import com.example.android.sunshine.app.R;
 import com.example.android.sunshine.app.Utility;
+import com.example.android.sunshine.app.WeatherInformation;
 import com.example.android.sunshine.app.data.WeatherContract;
 import com.example.android.sunshine.app.muzei.WeatherMuzeiSource;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.wearable.Wearable;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -54,6 +62,9 @@ import java.util.concurrent.ExecutionException;
 
 public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     public final String LOG_TAG = SunshineSyncAdapter.class.getSimpleName();
+    public final String WEATHER_DETAILS_PATH
+            = "/weather/details";
+
     public static final String ACTION_DATA_UPDATED =
             "com.example.android.sunshine.app.ACTION_DATA_UPDATED";
     // Interval at which to sync with the weather, in seconds.
@@ -62,6 +73,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     public static final int SYNC_FLEXTIME = SYNC_INTERVAL/3;
     private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
     private static final int WEATHER_NOTIFICATION_ID = 3004;
+    GoogleApiClient googleApiClient;
 
 
     private static final String[] NOTIFY_WEATHER_PROJECTION = new String[] {
@@ -89,6 +101,10 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
     public SunshineSyncAdapter(Context context, boolean autoInitialize) {
         super(context, autoInitialize);
+        if(googleApiClient == null){
+            googleApiClient = new GoogleApiClient.Builder(context).
+                    addApi(Wearable.API).build();
+        }
     }
 
     @Override
@@ -310,6 +326,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
                 double high;
                 double low;
+                WeatherInformation information;
 
                 String description;
                 int weatherId;
@@ -352,6 +369,12 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_WEATHER_ID, weatherId);
 
                 cVVector.add(weatherValues);
+
+                if(i == 0) {
+                    // DO it only once
+                    information = new WeatherInformation(high, low, description, weatherId);
+                    updateWatchFace(information);
+                }
             }
 
             int inserted = 0;
@@ -364,7 +387,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 // delete old data so we don't build up an endless history
                 getContext().getContentResolver().delete(WeatherContract.WeatherEntry.CONTENT_URI,
                         WeatherContract.WeatherEntry.COLUMN_DATE + " <= ?",
-                        new String[] {Long.toString(dayTime.setJulianDay(julianStartDay-1))});
+                        new String[]{Long.toString(dayTime.setJulianDay(julianStartDay - 1))});
 
                 updateWidgets();
                 updateMuzei();
@@ -396,6 +419,35 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             context.startService(new Intent(ACTION_DATA_UPDATED)
                     .setClass(context, WeatherMuzeiSource.class));
         }
+    }
+
+    private void updateWatchFace(WeatherInformation information){
+        Log.d(LOG_TAG, "Updating the watch face");
+        if(information == null) return;
+
+        String formattedMaxTemperature = Utility.formatTemperature(getContext(),
+                information.getMaxTemp());
+        String formattedMinTemperature = Utility.formatTemperature(getContext(),
+                information.getMinTemp());
+
+        PutDataMapRequest dataMapRequest = PutDataMapRequest.create("/wearable");
+
+        dataMapRequest.getDataMap().putString("maxTemp", formattedMaxTemperature);
+        dataMapRequest.getDataMap().putString("minTemp", formattedMinTemperature);
+        dataMapRequest.getDataMap().putInt("weatherId",
+                information.getWeatherArtResourceId());
+
+        PutDataRequest request = dataMapRequest.asPutDataRequest();
+
+        Wearable.DataApi.putDataItem(googleApiClient, request).setResultCallback(
+                new ResultCallback<DataApi.DataItemResult>() {
+                    @Override
+                    public void onResult(DataApi.DataItemResult dataItemResult) {
+                        Log.d(LOG_TAG, "The status of result is " +
+                                dataItemResult.getStatus().toString());
+                    }
+                }
+        );
     }
 
     private void notifyWeather() {
