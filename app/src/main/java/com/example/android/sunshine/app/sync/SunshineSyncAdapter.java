@@ -57,6 +57,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.UUID;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
 
@@ -430,10 +431,11 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         String formattedMinTemperature = Utility.formatTemperature(getContext(),
                 information.getMinTemp());
 
-        PutDataMapRequest dataMapRequest = PutDataMapRequest.create("/wearable");
+        PutDataMapRequest dataMapRequest = PutDataMapRequest.create("/weather/details");
 
         dataMapRequest.getDataMap().putString("maxTemp", formattedMaxTemperature);
         dataMapRequest.getDataMap().putString("minTemp", formattedMinTemperature);
+        dataMapRequest.getDataMap().putString("uuid_key", UUID.randomUUID().toString());
         dataMapRequest.getDataMap().putInt("weatherId",
                 information.getWeatherArtResourceId());
 
