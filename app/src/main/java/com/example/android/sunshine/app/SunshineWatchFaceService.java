@@ -14,18 +14,7 @@ import com.google.android.gms.wearable.WearableListenerService;
 public class SunshineWatchFaceService extends WearableListenerService {
 
     private static final String LOG_TAG = SunshineWatchFaceService.class.getSimpleName();
-
-    @Override
-    public void onCreate() {
-        Log.d(LOG_TAG, "On Create : " + LOG_TAG);
-        super.onCreate();
-    }
-
-    @Override
-    public void onMessageReceived(MessageEvent messageEvent) {
-        Log.d(LOG_TAG, "onMessageReceived : " + LOG_TAG);
-        super.onMessageReceived(messageEvent);
-    }
+    private final String WEATHER_PATH  = "/weather";
 
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
@@ -33,10 +22,8 @@ public class SunshineWatchFaceService extends WearableListenerService {
         Log.d(LOG_TAG, "Data has been changed in the service.");
 
         for(DataEvent event : dataEvents){
-//            if(event.getType() == DataEvent.TYPE_CHANGED){
-                if(event.getDataItem().getUri().getPath().equals("/weather")){
+                if(event.getDataItem().getUri().getPath().equals(WEATHER_PATH)){
                     SunshineSyncAdapter.syncImmediately(this);
-//                }
             }
         }
         super.onDataChanged(dataEvents);

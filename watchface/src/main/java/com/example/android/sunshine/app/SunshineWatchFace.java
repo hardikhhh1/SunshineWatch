@@ -68,6 +68,12 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
 
     private static final Typeface NORMAL_TYPEFACE =
             Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL);
+    public final String WEATHER_PATH  = "/weather";
+    public final String WEATHER_DETAILS_PATH  = "/weatherDetails";
+    private final String MAX_TEMP_KEY = "maxTemp";
+    private final String MIN_TEMP_KEY= "minTemp";
+    private final String WEATHER_KEY = "weatherId";
+
 
     /**
      * Update rate in milliseconds for interactive mode. We update once a second since seconds are
@@ -82,8 +88,6 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
 
     @Override
     public Engine onCreateEngine() {
-
-
         return new Engine();
     }
 
@@ -136,7 +140,11 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
             }
         };
 
-        private GoogleApiClient googleApiClient;
+        GoogleApiClient googleApiClient = new GoogleApiClient.Builder(SunshineWatchFace.this)
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .addApi(Wearable.API)
+                .build();
 
         float mXOffset, mYOffset;
 
@@ -163,7 +171,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
                 DataItem dataItem = event.getDataItem();
                 String path = dataItem.getUri().getPath();
                 Log.d(LOG_TAG, "Path : " + path);
-                if(path.equals("/weather/details")){
+                if(path.compareTo(WEATHER_DETAILS_PATH) == 0){
                     Log.d(LOG_TAG, "Got the weather details");
                     setWeatherData(dataItem);
                 }
@@ -174,20 +182,27 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
 
         private void setWeatherData(DataItem dataItem){
             DataMap dataMap = DataMapItem.fromDataItem(dataItem).getDataMap();
-            highTemperature = dataMap.getString("maxTemp", null);
-            lowTemperature = dataMap.getString("minTemp", null);
-            int weatherId = dataMap.getInt("weatherId", -1);
+            highTemperature = dataMap.getString(MAX_TEMP_KEY, null);
+            lowTemperature = dataMap.getString(MIN_TEMP_KEY, null);
+            int weatherId = dataMap.getInt(WEATHER_KEY, -1);
+            Log.d(LOG_TAG, "High Temperature : " + highTemperature);
+            Log.d(LOG_TAG, "Low Temperature : " + lowTemperature);
+            Log.d(LOG_TAG, "weatherId: " + weatherId);
             if(weatherId != -1){
                 weatherIconId = Utility.getIconResourceForWeatherCondition(weatherId);
             }
         }
+
+
+
+
 
         @Override
         public void onConnected(Bundle bundle) {
             // Request weather info
             Log.d(LOG_TAG, "Watch face has been connected");
             Wearable.DataApi.addListener(googleApiClient, Engine.this);
-            PutDataMapRequest dataMapRequest = PutDataMapRequest.create("/weather");
+            PutDataMapRequest dataMapRequest = PutDataMapRequest.create(WEATHER_PATH);
             dataMapRequest.getDataMap().putString("uuid_code", UUID.randomUUID().toString());
             PutDataRequest dataRequest = dataMapRequest.asPutDataRequest();
 
@@ -209,7 +224,7 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
 
         @Override
         public void onConnectionFailed(ConnectionResult connectionResult) {
-            Log.d(LOG_TAG, "COnnection has been failed");
+            Log.e(LOG_TAG, "COnnection has been failed");
         }
 
         @Override
@@ -237,12 +252,6 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
             temperaturePaint = createTextPaint(resources.getColor(R.color.primary_light));
 
             mTime = new Time();
-
-            googleApiClient = new GoogleApiClient.Builder(SunshineWatchFace.this)
-                    .addConnectionCallbacks(this)
-                    .addOnConnectionFailedListener(this)
-                    .addApi(Wearable.API)
-                    .build();
 
 
         }
@@ -377,12 +386,12 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
 
         @Override
         public void onDraw(Canvas canvas, Rect bounds) {
-
+            invalidate();
             centerX = bounds.centerX();
             centerY = bounds.centerY();
 
             // Draw the background.
-            if (isInAmbientMode()) {
+            if (mAmbient){
                 canvas.drawColor(Color.BLACK);
             } else {
                 canvas.drawRect(0, 0, bounds.width(), bounds.height(), mBackgroundPaint);
@@ -391,31 +400,29 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
             // Draw H:MM in ambient mode or H:MM:SS in interactive mode.
             mTime.setToNow();
             String text = String.format("%d:%02d", mTime.hour, mTime.minute);
+            Rect textBounds = new Rect();
+            mTextPaint.getTextBounds(text, 0, text.length(), textBounds);
 
-            mTextPaint.getTextBounds(text, 0, text.length(), bounds);
-
-            mXTimeOffset = centerX - (bounds.width() / 2f);
+            mXTimeOffset = centerX - (textBounds.width() / 2f);
             mYTimeOffset = (centerY / 2f);
             canvas.drawText(text, mXTimeOffset, mYTimeOffset, mTextPaint);
-
-
-
 
             String dateStr = String.format(getDay(mTime.weekDay)
                     + ", " + getMonth(mTime.month) + " " +
                     mTime.year);
 
-            mDateTextPaint.getTextBounds(dateStr, 0, dateStr.length(), bounds);
+            mDateTextPaint.getTextBounds(dateStr, 0, dateStr.length(), textBounds);
 
-            mXDateOffset = centerX - (bounds.width() / 2f);
-            mYDateOffset = centerY - (1.5f * bounds.height());
+            mXDateOffset = centerX - (textBounds.width() / 2f);
+            mYDateOffset = centerY - (1.5f * textBounds.height());
 
             canvas.drawText(dateStr, mXDateOffset, mYDateOffset, mDateTextPaint);
 
             canvas.drawLine(centerX - 20, centerY, centerX + 20,
                     centerY, mTextPaint);
-
-            drawClimateDetails(canvas, bounds);
+            if(!mAmbient) {
+                drawClimateDetails(canvas, textBounds);
+            }
 
         }
 
@@ -423,20 +430,24 @@ public class SunshineWatchFace extends CanvasWatchFaceService {
         private void drawClimateDetails(Canvas canvas, Rect bounds){
             mXWeatherOffset = centerX - (centerX / 2f);
             mYWeatherOffset = centerY + 15;
-            weatherIconId = Utility.getIconResourceForWeatherCondition(300);
             if(weatherIconId != -1){
+                try {
+                    Drawable drawable = getResources().getDrawable(weatherIconId);
+                    Bitmap icon = ((BitmapDrawable) drawable).getBitmap();
+                    int size = (int) mDateTextPaint.getTextSize() * 2;
+                    Bitmap weatherIcon = Bitmap.createScaledBitmap(icon, size,
+                            size, true);
+                    if (!isInAmbientMode()) {
+                        // If it is not in ambient mode, show
+                        // the weather icon.
+                        canvas.drawBitmap(weatherIcon, mXWeatherOffset, mYWeatherOffset, null);
+                    }
+                    mXWeatherOffset += weatherIcon.getWidth() + 10;
+                } catch(Resources.NotFoundException e){
 
-                Drawable drawable = getResources().getDrawable(weatherIconId);
-                Bitmap icon = ((BitmapDrawable) drawable).getBitmap();
-                int size = (int) mDateTextPaint.getTextSize() * 2;
-                Bitmap weatherIcon = Bitmap.createScaledBitmap(icon, size,
-                        size, true);
-                if(!isInAmbientMode()) {
-                    // If it is not in ambient mode, show
-                    // the weather icon.
-                    canvas.drawBitmap(weatherIcon, mXWeatherOffset, mYWeatherOffset, null);
+
                 }
-                mXWeatherOffset += weatherIcon.getWidth() + 10;
+
             }
             if(highTemperature != null) {
                 canvas.drawText(highTemperature, mXWeatherOffset, mYWeatherOffset + 30,
